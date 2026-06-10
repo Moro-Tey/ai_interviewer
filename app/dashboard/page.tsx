@@ -3,7 +3,7 @@
 import { useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useAuth } from '@/lib/auth-context'
+import {useAuth} from '@clerk/nextjs'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -31,15 +31,15 @@ function statusVariant(status: string) {
 
 export default function DashboardPage() {
   const router = useRouter()
-  const { isAuthenticated } = useAuth()
+  const { isSignedIn } = useAuth()
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (isSignedIn === false) {
       router.push('/login')
     }
-  }, [isAuthenticated, router])
+  }, [isSignedIn, router])
 
-  if (!isAuthenticated) return null
+  if (!isSignedIn) return null
 
   return (
     <DashboardLayout>

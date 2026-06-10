@@ -1,4 +1,4 @@
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
 
 async function request<T>(
   method: string,
@@ -25,28 +25,6 @@ async function request<T>(
 }
 
 export const api = {
-  auth: {
-    async register(data: {
-      companyName: string
-      email: string
-      password: string
-      plan: string
-    }) {
-      return request<{ token: string; user: { id: string; name: string; email: string; company: string } }>(
-        'POST',
-        '/api/auth/register',
-        data
-      )
-    },
-    async login(data: { email: string; password: string }) {
-      return request<{ token: string; user: { id: string; name: string; email: string; company: string } }>(
-        'POST',
-        '/api/auth/login',
-        data
-      )
-    },
-  },
-
   interviews: {
     async list(token?: string) {
       return request<Interview[]>('GET', '/api/interviews', undefined, token)

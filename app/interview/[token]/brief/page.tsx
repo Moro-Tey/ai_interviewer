@@ -33,7 +33,7 @@ function BriefContent() {
               'When finished, your responses will be reviewed and you will receive feedback.',
             ].map((step, i) => (
               <li key={i} className="flex items-start gap-3 text-sm text-gray-700">
-                <span className="w-6 h-6 bg-indigo-100 text-indigo-700 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
+                <span className="w-6 h-6 bg-indigo-100 text-indigo-700 rounded-full text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
                   {i + 1}
                 </span>
                 {step}

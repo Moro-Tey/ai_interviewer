@@ -1,44 +1,64 @@
-'use client'
+'use client';
 
-import { useState } from 'react'
-import Link from 'next/link'
-import { DashboardLayout } from '@/components/layout/dashboard-layout'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Plus, Search, Trash2, Eye } from 'lucide-react'
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useAuth } from '@clerk/nextjs';
+import { DashboardLayout } from '@/components/layout/dashboard-layout';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 
-type Status = 'All' | 'Active' | 'Completed' | 'Draft'
+import { Plus, Search, Trash2, Eye } from 'lucide-react';
+import { api, Interview } from '@/lib/api';
 
-const mockInterviews = [
-  { id: '1', title: 'Senior Frontend Engineer', role: 'Engineer', difficulty: 'Hard', status: 'Active', candidates: 8, createdAt: 'Jun 1, 2026' },
-  { id: '2', title: 'Backend Developer', role: 'Developer', difficulty: 'Medium', status: 'Completed', candidates: 12, createdAt: 'May 28, 2026' },
-  { id: '3', title: 'Data Scientist', role: 'Data', difficulty: 'Hard', status: 'Draft', candidates: 0, createdAt: 'May 25, 2026' },
-  { id: '4', title: 'DevOps Engineer', role: 'Engineer', difficulty: 'Medium', status: 'Completed', candidates: 5, createdAt: 'May 20, 2026' },
-  { id: '5', title: 'iOS Developer', role: 'Mobile', difficulty: 'Easy', status: 'Active', candidates: 3, createdAt: 'May 18, 2026' },
-]
+type Status = 'All' | 'Active' | 'Completed' | 'Draft';
 
 function statusVariant(status: string) {
-  if (status === 'Active') return 'success' as const
-  if (status === 'Completed') return 'info' as const
-  return 'default' as const
+  if (status === 'Active') return 'success' as const;
+  if (status === 'Completed') return 'info' as const;
+  return 'default' as const;
 }
 
 function difficultyVariant(d: string) {
-  if (d === 'Hard') return 'danger' as const
-  if (d === 'Medium') return 'warning' as const
-  return 'success' as const
+  if (d === 'Hard') return 'danger' as const;
+  if (d === 'Medium') return 'warning' as const;
+  return 'success' as const;
 }
 
 export default function InterviewsPage() {
-  const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState<Status>('All')
+  const { getToken } = useAuth();
+  const [interviews, setInterviews] = useState<Interview[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState<Status>('All');
 
-  const filtered = mockInterviews.filter((i) => {
-    const matchesSearch = i.title.toLowerCase().includes(search.toLowerCase()) || i.role.toLowerCase().includes(search.toLowerCase())
-    const matchesFilter = filter === 'All' || i.status === filter
-    return matchesSearch && matchesFilter
-  })
+  useEffect(() => {
+    async function load() {
+      try {
+        const token = await getToken();
+        if (!token) throw new Error('Not authenticated');
+        const data = await api.interviews.list(token);
+        // ✅ Ensure it's always an array
+        setInterviews(Array.isArray(data) ? data : []);
+      } catch (err: unknown) {
+        setError((err as Error).message || 'Failed to load interviews');
+        setInterviews([]); // fallback
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, [getToken]);
+
+  const filtered = interviews.filter((i) => {
+    const matchesSearch = i.title.toLowerCase().includes(search.toLowerCase()) ||
+                           i.role.toLowerCase().includes(search.toLowerCase());
+    const matchesFilter = filter === 'All' || i.status === filter;
+    return matchesSearch && matchesFilter;
+  });
+
+  if (loading) return <DashboardLayout><div className="p-6">Loading interviews…</div></DashboardLayout>;
+  if (error) return <DashboardLayout><div className="p-6 text-red-600">Error: {error}</div></DashboardLayout>;
 
   return (
     <DashboardLayout>
@@ -120,8 +140,8 @@ export default function InterviewsPage() {
                       <td className="px-6 py-4">
                         <Badge variant={statusVariant(interview.status)}>{interview.status}</Badge>
                       </td>
-                      <td className="px-6 py-4 text-gray-600">{interview.candidates}</td>
-                      <td className="px-6 py-4 text-gray-500">{interview.createdAt}</td>
+                      <td className="px-6 py-4 text-gray-600">{interview.candidatesCount ?? 0}</td>
+                      <td className="px-6 py-4 text-gray-500">{new Date(interview.createdAt).toLocaleDateString()}</td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
                           <Link href={`/interviews/${interview.id}`}>
@@ -144,5 +164,5 @@ export default function InterviewsPage() {
         )}
       </div>
     </DashboardLayout>
-  )
+  );
 }

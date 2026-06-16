@@ -1,44 +1,46 @@
-'use client'
+'use client';
 
-import { useState } from 'react'
-import { useParams } from 'next/navigation'
-import Link from 'next/link'
-import { DashboardLayout } from '@/components/layout/dashboard-layout'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Copy, Check } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
 
-type Tab = 'overview' | 'candidates' | 'results'
+import { useAuth } from '@clerk/nextjs';
+import { DashboardLayout } from '@/components/layout/dashboard-layout';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Copy, Check } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { api, Interview } from '@/lib/api';
 
-const mockInterview = {
+type Tab = 'overview' | 'candidates' | 'results';
+
+// Mock data for fallback (only used if real fetch fails)
+const fallbackInterview = {
   id: '1',
   title: 'Senior Frontend Engineer',
   role: 'Engineer',
-  difficulty: 'Hard',
+  difficulty: 'Hard' as const,
   duration: 60,
   topics: ['Arrays', 'Algorithms', 'System Design'],
   language: 'JavaScript',
-  questionCount: 3,
-  status: 'Active',
+  numQuestions: 3,
+  status: 'Active' as const,
+  candidatesCount: 3,
+  createdAt: new Date().toISOString(),
   shareToken: 'tok_abc123',
-  createdAt: 'Jun 1, 2026',
-}
+};
 
-const mockCandidates = [
-  { name: 'Alice Johnson', email: 'alice@example.com', score: 88, status: 'Passed', date: 'Jun 2, 2026', resultId: 'r1' },
-  { name: 'Bob Smith', email: 'bob@example.com', score: 54, status: 'Failed', date: 'Jun 2, 2026', resultId: 'r2' },
-  { name: 'Carol White', email: 'carol@example.com', score: 73, status: 'Review', date: 'Jun 1, 2026', resultId: 'r3' },
-]
+const fallbackCandidates = [
+  { name: 'Alice Johnson', email: 'alice@example.com', score: 88, status: 'Passed' as const, date: 'Jun 2, 2026', resultId: 'r1' },
+  { name: 'Bob Smith', email: 'bob@example.com', score: 54, status: 'Failed' as const, date: 'Jun 2, 2026', resultId: 'r2' },
+  { name: 'Carol White', email: 'carol@example.com', score: 73, status: 'Review' as const, date: 'Jun 1, 2026', resultId: 'r3' },
+];
 
-const mockResult = {
+const fallbackResult = {
   recommendation: 'Strong Hire',
   confidence: 92,
   transcript: [
     { role: 'ai', content: 'Tell me about a challenging technical problem you solved recently.' },
     { role: 'candidate', content: 'I optimized a slow React rendering pipeline by introducing memoization and virtualization.' },
-    { role: 'ai', content: 'How did you identify the bottleneck?' },
-    { role: 'candidate', content: 'I used React DevTools profiler to find components re-rendering unnecessarily.' },
   ],
   codeReview: {
     score: 85,
@@ -46,26 +48,77 @@ const mockResult = {
     issues: ['O(n²) sort could be replaced with O(n log n)', 'Missing edge case for empty arrays'],
   },
   metrics: { timeSpent: 52, questionsAnswered: 5, codingChallenges: 3 },
-}
+};
 
 function resultStatusVariant(s: string) {
-  if (s === 'Passed') return 'success' as const
-  if (s === 'Failed') return 'danger' as const
-  return 'warning' as const
+  if (s === 'Passed') return 'success' as const;
+  if (s === 'Failed') return 'danger' as const;
+  return 'warning' as const;
 }
 
 export default function InterviewDetailPage() {
-  const { id } = useParams<{ id: string }>()
-  const [tab, setTab] = useState<Tab>('overview')
-  const [copied, setCopied] = useState(false)
+  const { id } = useParams<{ id: string }>();
+  const { getToken } = useAuth();
 
-  const shareLink = `${typeof window !== 'undefined' ? window.location.origin : 'https://app.interviewai.com'}/interview/${mockInterview.shareToken}`
+  const [interview, setInterview] = useState<Interview | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [tab, setTab] = useState<Tab>('overview');
+  const [copied, setCopied] = useState(false);
+
+  // Fetch real interview data
+  useEffect(() => {
+    async function load() {
+      if (!id) return;
+      try {
+        const token = await getToken();
+        if (!token) throw new Error('Not authenticated');
+        const data = await api.interviews.get(id, token);
+        setInterview(data);
+      } catch (err: unknown) {
+        console.warn('Failed to fetch interview, using fallback:', err);
+        setError((err as Error).message || 'Failed to load interview details.');
+        // Use fallback data so UI still works (your backend might not be ready yet)
+        setInterview(fallbackInterview as Interview);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, [id, getToken]);
+
+  // Use fallback data for candidates and result (replace with real endpoints later)
+  const candidates = fallbackCandidates;
+  const result = fallbackResult;
+
+  const shareLink = typeof window !== 'undefined'
+    ? `${window.location.origin}/interview/${interview?.shareToken || 'tok_abc123'}`
+    : '';
 
   function copyLink() {
-    navigator.clipboard.writeText(shareLink)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    navigator.clipboard.writeText(shareLink);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   }
+
+  if (loading) {
+    return (
+      <DashboardLayout>
+        <div className="p-6">Loading interview details…</div>
+      </DashboardLayout>
+    );
+  }
+
+  if (error && !interview) {
+    return (
+      <DashboardLayout>
+        <div className="p-6 text-red-600">Error: {error}</div>
+      </DashboardLayout>
+    );
+  }
+
+  // Use the fetched interview or fallback
+  const data = interview || fallbackInterview;
 
   return (
     <DashboardLayout>
@@ -73,11 +126,11 @@ export default function InterviewDetailPage() {
         <div className="flex items-start justify-between mb-6">
           <div>
             <div className="flex items-center gap-3 mb-1">
-              <h1 className="text-2xl font-bold text-gray-900">{mockInterview.title}</h1>
-              <Badge variant={mockInterview.status === 'Active' ? 'success' : 'default'}>{mockInterview.status}</Badge>
+              <h1 className="text-2xl font-bold text-gray-900">{data.title}</h1>
+              <Badge variant={data.status === 'Active' ? 'success' : 'default'}>{data.status}</Badge>
             </div>
             <p className="text-sm text-gray-500">
-              {mockInterview.role} · {mockInterview.difficulty} · {mockInterview.duration} min · Created {mockInterview.createdAt}
+              {data.role} · {data.difficulty} · {data.duration} min · Created {new Date(data.createdAt).toLocaleDateString()}
             </p>
           </div>
         </div>
@@ -106,15 +159,17 @@ export default function InterviewDetailPage() {
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                 <div>
                   <p className="text-gray-500">Topics</p>
-                  <p className="font-medium text-gray-900 mt-0.5">{mockInterview.topics.join(', ')}</p>
+                  <p className="font-medium text-gray-900 mt-0.5">
+                    {data.topics?.join(', ') || 'None'}
+                  </p>
                 </div>
                 <div>
                   <p className="text-gray-500">Language</p>
-                  <p className="font-medium text-gray-900 mt-0.5">{mockInterview.language}</p>
+                  <p className="font-medium text-gray-900 mt-0.5">{data.language || 'Not set'}</p>
                 </div>
                 <div>
                   <p className="text-gray-500">Coding Questions</p>
-                  <p className="font-medium text-gray-900 mt-0.5">{mockInterview.questionCount}</p>
+                  <p className="font-medium text-gray-900 mt-0.5">{data.numQuestions ?? 0}</p>
                 </div>
               </div>
             </div>
@@ -157,7 +212,7 @@ export default function InterviewDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {mockCandidates.map((c) => (
+                {candidates.map((c) => (
                   <tr key={c.email} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4 font-medium text-gray-900">{c.name}</td>
                     <td className="px-6 py-4 text-gray-600">{c.email}</td>
@@ -187,19 +242,19 @@ export default function InterviewDetailPage() {
               <div className="flex items-center gap-4">
                 <div>
                   <p className="text-sm text-gray-500 mb-1">Recommendation</p>
-                  <Badge variant="success" className="text-sm px-3 py-1">{mockResult.recommendation}</Badge>
+                  <Badge variant="success" className="text-sm px-3 py-1">{result.recommendation}</Badge>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500 mb-1">Confidence</p>
-                  <p className="text-2xl font-bold text-gray-900">{mockResult.confidence}%</p>
+                  <p className="text-2xl font-bold text-gray-900">{result.confidence}%</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500 mb-1">Time Spent</p>
-                  <p className="text-lg font-semibold text-gray-900">{mockResult.metrics.timeSpent} min</p>
+                  <p className="text-lg font-semibold text-gray-900">{result.metrics.timeSpent} min</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500 mb-1">Questions</p>
-                  <p className="text-lg font-semibold text-gray-900">{mockResult.metrics.questionsAnswered}</p>
+                  <p className="text-lg font-semibold text-gray-900">{result.metrics.questionsAnswered}</p>
                 </div>
               </div>
             </div>
@@ -207,7 +262,7 @@ export default function InterviewDetailPage() {
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
               <h2 className="font-semibold text-gray-900 mb-4">Transcript</h2>
               <div className="space-y-3">
-                {mockResult.transcript.map((msg, i) => (
+                {result.transcript.map((msg, i) => (
                   <div key={i} className={cn('flex', msg.role === 'candidate' ? 'justify-end' : 'justify-start')}>
                     <div
                       className={cn(
@@ -226,10 +281,10 @@ export default function InterviewDetailPage() {
 
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
               <h2 className="font-semibold text-gray-900 mb-2">Code Review</h2>
-              <p className="text-sm text-gray-600 mb-3">{mockResult.codeReview.feedback}</p>
+              <p className="text-sm text-gray-600 mb-3">{result.codeReview.feedback}</p>
               <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Issues found</p>
               <ul className="space-y-1.5">
-                {mockResult.codeReview.issues.map((issue, i) => (
+                {result.codeReview.issues.map((issue, i) => (
                   <li key={i} className="text-sm text-gray-700 flex items-start gap-2">
                     <span className="text-red-500 mt-0.5">•</span> {issue}
                   </li>
@@ -240,5 +295,5 @@ export default function InterviewDetailPage() {
         )}
       </div>
     </DashboardLayout>
-  )
+  );
 }

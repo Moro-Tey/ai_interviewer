@@ -6,10 +6,11 @@ import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { api } from '@/lib/api'
-import { useAuth } from '@/lib/auth-context'
+import { useAuth } from '@clerk/nextjs'
 import { Spinner } from '@/components/ui/spinner'
 import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useProfile } from '@/lib/useProfile';
 
 const topicOptions = ['Arrays', 'Algorithms', 'System Design', 'SQL', 'OOP', 'Trees & Graphs', 'Dynamic Programming', 'Networking']
 const languageOptions = ['JavaScript', 'Python', 'Java', 'Go', 'C++']
@@ -30,7 +31,9 @@ const steps = ['Basic Info', 'Configuration', 'Review & Create']
 
 export default function CreateInterviewPage() {
   const router = useRouter()
-  const { token } = useAuth()
+  const { getToken } = useAuth()
+    const { loading: profileLoading } = useProfile(true); // ✅ redirects if name/company missing
+
   const [step, setStep] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -52,16 +55,28 @@ export default function CreateInterviewPage() {
   }
 
   async function handleCreate() {
-    setError('')
-    setLoading(true)
-    try {
-      await api.interviews.create(form, token || undefined)
-      router.push('/interviews')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create interview.')
-    } finally {
-      setLoading(false)
+  setError('');
+  setLoading(true);
+  try {
+    const token = await getToken();
+    if (!token) {
+      throw new Error('You must be logged in.');
     }
+    const interview = await api.interviews.create(form, token);
+    router.push(`/interviews/${interview.id}`);
+  } catch (err: unknown) {
+    setError(err instanceof Error ? err.message : 'Failed to create interview.');
+  } finally {
+    setLoading(false);
+  }
+}
+  // Wait until profile check is complete before rendering the form
+  if (profileLoading) {
+    return (
+      <DashboardLayout>
+        <div className="p-6">Loading...</div>
+      </DashboardLayout>
+    );
   }
 
   return (
@@ -75,7 +90,7 @@ export default function CreateInterviewPage() {
         <div className="flex items-center gap-0 mb-8">
           {steps.map((s, i) => (
             <div key={s} className="flex items-center flex-1 last:flex-none">
-              <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="flex items-center gap-2 shrink-0">
                 <div
                   className={cn(
                     'w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold border-2 transition-colors',

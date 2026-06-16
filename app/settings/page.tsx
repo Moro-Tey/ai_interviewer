@@ -1,12 +1,14 @@
-'use client'
+'use client';
 
-import { useState } from 'react'
-import { DashboardLayout } from '@/components/layout/dashboard-layout'
-import { useAuth } from '@/lib/auth-context'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { cn } from '@/lib/utils'
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useUser, useAuth } from '@clerk/nextjs';
+import { DashboardLayout } from '@/components/layout/dashboard-layout';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 
+const API_BASE = '';
 function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void }) {
   return (
     <button
@@ -26,24 +28,170 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void 
         )}
       />
     </button>
-  )
+  );
 }
 
 export default function SettingsPage() {
-  const { user } = useAuth()
-  const [name, setName] = useState(user?.name || '')
-  const [company, setCompany] = useState(user?.company || '')
-  const [currentPassword, setCurrentPassword] = useState('')
-  const [newPassword, setNewPassword] = useState('')
-  const [notifications, setNotifications] = useState({ email: true, reports: true, sessions: false })
-  const [deleteConfirm, setDeleteConfirm] = useState('')
-  const [saved, setSaved] = useState(false)
+  const { user, isLoaded: userLoaded, isSignedIn } = useUser();
+  const { getToken } = useAuth();
+  const router = useRouter();
 
-  function handleSaveProfile(e: React.FormEvent) {
-    e.preventDefault()
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+  // Form states
+  const [name, setName] = useState('');
+  const [companyName, setCompanyName] = useState('');
+  const [hasCompany, setHasCompany] = useState<boolean | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [savingName, setSavingName] = useState(false);
+  const [savingCompany, setSavingCompany] = useState(false);
+  const [message, setMessage] = useState('');
+
+
+  // Mock notification settings (you can implement later)
+  const [notifications, setNotifications] = useState({
+    email: true,
+    reports: true,
+    sessions: false,
+  });
+
+  const [deleteConfirm, setDeleteConfirm] = useState('');
+
+  const loadData = async () => {
+    try {
+      if (!isSignedIn) {
+        setLoading(false);
+        return;
+      }
+      const token = await getToken();
+      if (!token) {
+        console.warn('No token available');
+        setLoading(false);
+        return;
+      }
+
+      // Fetch user name
+      const userRes = await fetch(`/api/users/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (userRes.ok) {
+        const data = await userRes.json();
+        setName(data.user.name || '');
+      }
+
+      // Fetch company
+      const companyRes = await fetch(`/api/companies/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (companyRes.ok) {
+        const data = await companyRes.json();
+        if (data.company) {
+          setCompanyName(data.company.name);
+          setHasCompany(true);
+        } else {
+          setHasCompany(false);
+        }
+      } else {
+        setHasCompany(false);
+      }
+    } catch (err) {
+      console.error('Error loading data:', err);
+    } finally {
+      setLoading(false);   // ← ALWAYS called
+    }
+  };
+
+  // Load existing user name and company
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadData();
+  }, [isSignedIn, getToken]);
+
+  // Save name to backend
+  async function handleSaveName() {
+    if (!name.trim()) return;
+    setSavingName(true);
+    const token = await getToken();
+    if (!token) {
+      setMessage('You must be logged in.');
+      setSavingName(false);
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/api/users/me/name`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) throw new Error('Failed to update name');
+      await loadData();
+      setMessage('Name saved!');
+
+
+    } catch (err: unknown) {
+      setMessage(err instanceof Error ? err.message : 'An unknown error occurred');
+    } finally {
+      setSavingName(false);
+      setTimeout(() => setMessage(''), 2000);
+    }
   }
+
+  // Create company (and link to user)
+  async function handleCreateCompany() {
+    if (!companyName.trim()) return;
+    setSavingCompany(true);
+    const token = await getToken();
+    if (!token) {
+      setMessage('You must be logged in.');
+      setSavingCompany(false);
+      return;
+    }
+    try {
+      // 1. Create the company (POST /api/companies)
+      const res = await fetch(`/api/companies`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ companyName }),
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to create company');
+      }
+
+      // 2. Immediately refetch the company to confirm the link was made
+      const companyRes = await fetch(`/api/companies/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (companyRes.ok) {
+        const data = await companyRes.json();
+        if (data.company) {
+          setCompanyName(data.company.name);
+          setHasCompany(true);
+        } else {
+          setHasCompany(false);
+        }
+      } else {
+        // If the fetch fails, we still assume creation succeeded but force a reload later
+        setHasCompany(true);
+      }
+      await loadData();
+      setMessage('Company created!');
+    } catch (err: unknown) {
+      setMessage(err instanceof Error ? err.message : 'An unknown error occurred');
+    } finally {
+      setSavingCompany(false);
+      setTimeout(() => setMessage(''), 2000);
+    }
+  }
+
+  // Redirect to dashboard if both name and company exist (optional, but nice)
+  const isNameFilled = name.trim().length > 0;
+  const isCompanyFilled = hasCompany === true;
+  const ready = isNameFilled && isCompanyFilled;
+
+
+  if (!userLoaded || loading) {
+    return <DashboardLayout><div className="p-6">Loading...</div></DashboardLayout>;
+  }
+
 
   return (
     <DashboardLayout>
@@ -54,9 +202,10 @@ export default function SettingsPage() {
         </div>
 
         <div className="space-y-6">
+          {/* Profile Section – Name Editing */}
           <section className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
             <h2 className="font-semibold text-gray-900 mb-5">Profile</h2>
-            <form onSubmit={handleSaveProfile} className="space-y-4">
+            <div className="space-y-4">
               <Input
                 label="Full name"
                 value={name}
@@ -65,56 +214,61 @@ export default function SettingsPage() {
               />
               <Input
                 label="Email address"
-                value={user?.email || ''}
+                value={user?.primaryEmailAddress?.emailAddress || ''}
                 readOnly
-                helperText="Contact support to change your email."
+                helperText="Managed by Clerk. Contact support to change your email."
               />
-              <Button type="submit" variant="primary" size="sm">
-                {saved ? 'Saved!' : 'Save changes'}
+              <Button onClick={handleSaveName} disabled={savingName} variant="primary" size="sm">
+                {savingName ? 'Saving...' : 'Save changes'}
               </Button>
-            </form>
+            </div>
           </section>
 
+          {/* Company Section – Create or Show */}
           <section className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
             <h2 className="font-semibold text-gray-900 mb-5">Company</h2>
-            <div className="space-y-4">
-              <Input
-                label="Company name"
-                value={company}
-                onChange={(e) => setCompany(e.target.value)}
-                placeholder="Your company"
-              />
+            {hasCompany ? (
               <div>
-                <p className="text-sm font-medium text-gray-700 mb-2">Company logo</p>
-                <div className="border-2 border-dashed border-gray-200 rounded-lg p-8 text-center text-sm text-gray-500">
-                  Click to upload logo (PNG, JPG up to 2 MB)
-                </div>
+                <p className="text-sm text-gray-700">
+                  Your company: <span className="font-medium">{companyName}</span>
+                </p>
+                <p className="text-xs text-gray-500 mt-1">Contact support to change company name.</p>
               </div>
-              <Button variant="primary" size="sm">Save company</Button>
-            </div>
+            ) : (
+              <div className="space-y-4">
+                <Input
+                  label="Company name"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  placeholder="Acme Inc."
+                  required
+                />
+                <Button onClick={handleCreateCompany} disabled={savingCompany} variant="primary" size="sm">
+                  {savingCompany ? 'Creating...' : 'Create Company'}
+                </Button>
+              </div>
+            )}
           </section>
+          {ready && (
+            <div className="flex justify-center mt-6">
+              <Button variant="primary" onClick={() => router.push('/dashboard')}>
+                Go to Dashboard
+              </Button>
+            </div>
+          )}
 
+          {/* Change Password – Placeholder (use Clerk's built-in flows) */}
           <section className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
             <h2 className="font-semibold text-gray-900 mb-5">Change Password</h2>
-            <div className="space-y-4">
-              <Input
-                label="Current password"
-                type="password"
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                placeholder="••••••••"
-              />
-              <Input
-                label="New password"
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Minimum 8 characters"
-              />
-              <Button variant="primary" size="sm">Update password</Button>
-            </div>
+            <p className="text-sm text-gray-500 mb-4">
+              To change your password, use the Clerk account management page.
+            </p>
+            <Button variant="secondary" size="sm" onClick={() => window.open('https://accounts.clerk.com', '_blank')}>
+              Manage Account
+            </Button>
           </section>
 
+          {/* Notifications (mock) */}
           <section className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
             <h2 className="font-semibold text-gray-900 mb-5">Notifications</h2>
             <div className="space-y-4">
@@ -137,6 +291,7 @@ export default function SettingsPage() {
             </div>
           </section>
 
+          {/* Billing (mock) */}
           <section className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
             <h2 className="font-semibold text-gray-900 mb-2">Billing</h2>
             <p className="text-sm text-gray-600 mb-4">
@@ -154,6 +309,7 @@ export default function SettingsPage() {
             <Button variant="secondary" size="sm">Upgrade plan</Button>
           </section>
 
+          {/* Danger Zone */}
           <section className="bg-white rounded-xl border border-red-200 shadow-sm p-6">
             <h2 className="font-semibold text-red-700 mb-2">Danger Zone</h2>
             <p className="text-sm text-gray-600 mb-4">
@@ -176,7 +332,9 @@ export default function SettingsPage() {
             </div>
           </section>
         </div>
+        {message && <div className="mt-4 text-sm text-center text-green-600">{message}</div>}
+        {ready && <div className="mt-4 text-center text-green-600">✅ All set! Redirecting to dashboard...</div>}
       </div>
     </DashboardLayout>
-  )
+  );
 }

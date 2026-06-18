@@ -319,7 +319,7 @@ export default function InterviewDetailPage() {
                           <th className="text-left py-2">Used</th>
                           <th className="text-left py-2">Submission Status</th>
                           <th className="text-left py-2">Score</th>
-                          <th className="text-left py-2">Feedback</th>   {/* NEW */}
+                          <th className="text-left py-2">Feedback</th> 
                         </tr>
                       </thead>
                       <tbody>

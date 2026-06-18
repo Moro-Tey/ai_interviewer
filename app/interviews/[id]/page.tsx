@@ -2,123 +2,176 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-
 import { useAuth } from '@clerk/nextjs';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Copy, Check } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Copy, Check, Plus, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { api, Interview } from '@/lib/api';
+import { api, SessionWithSubmission } from '@/lib/api';
 
-type Tab = 'overview' | 'candidates' | 'results';
 
-// Mock data for fallback (only used if real fetch fails)
-const fallbackInterview = {
-  id: '1',
-  title: 'Senior Frontend Engineer',
-  role: 'Engineer',
-  difficulty: 'Hard' as const,
-  duration: 60,
-  topics: ['Arrays', 'Algorithms', 'System Design'],
-  language: 'JavaScript',
-  numQuestions: 3,
-  status: 'Active' as const,
-  candidatesCount: 3,
-  createdAt: new Date().toISOString(),
-  shareToken: 'tok_abc123',
-};
 
-const fallbackCandidates = [
-  { name: 'Alice Johnson', email: 'alice@example.com', score: 88, status: 'Passed' as const, date: 'Jun 2, 2026', resultId: 'r1' },
-  { name: 'Bob Smith', email: 'bob@example.com', score: 54, status: 'Failed' as const, date: 'Jun 2, 2026', resultId: 'r2' },
-  { name: 'Carol White', email: 'carol@example.com', score: 73, status: 'Review' as const, date: 'Jun 1, 2026', resultId: 'r3' },
-];
+type Tab = 'overview' | 'candidates';
 
-const fallbackResult = {
-  recommendation: 'Strong Hire',
-  confidence: 92,
-  transcript: [
-    { role: 'ai', content: 'Tell me about a challenging technical problem you solved recently.' },
-    { role: 'candidate', content: 'I optimized a slow React rendering pipeline by introducing memoization and virtualization.' },
-  ],
-  codeReview: {
-    score: 85,
-    feedback: 'Good use of data structures. Could improve time complexity in the sorting step.',
-    issues: ['O(n²) sort could be replaced with O(n log n)', 'Missing edge case for empty arrays'],
-  },
-  metrics: { timeSpent: 52, questionsAnswered: 5, codingChallenges: 3 },
-};
-
-function resultStatusVariant(s: string) {
-  if (s === 'Passed') return 'success' as const;
-  if (s === 'Failed') return 'danger' as const;
-  return 'warning' as const;
+interface Interview {
+  id: string;
+  title: string;
+  role: string;
+  difficulty: string;
+  duration: number;
+  topics: string[];
+  language: string;
+  numQuestions: number;
+  status: string;
+  createdAt: string;
 }
 
+interface Token {
+  id: string;
+  token: string;
+  expiresAt: string;
+  used: boolean;
+  createdAt: string;
+  candidateName: string;
+  candidateEmail: string;
+}
+function submissionStatusVariant(status: string) {
+  switch (status) {
+    case 'graded': return 'success';
+    case 'grading': return 'warning';
+    case 'pending': return 'default';
+    default: return 'default';
+  }
+}
 export default function InterviewDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const { getToken } = useAuth();
-
+  const { getToken, isSignedIn } = useAuth();
   const [interview, setInterview] = useState<Interview | null>(null);
+  const [tokens, setTokens] = useState<Token[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<Tab>('overview');
+  const [generating, setGenerating] = useState(false);
+  const [candidateName, setCandidateName] = useState('');
+  const [candidateEmail, setCandidateEmail] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [error, setError] = useState('');
-  const [tab, setTab] = useState<Tab>('overview');
-  const [copied, setCopied] = useState(false);
+  const [inviteUrl, setInviteUrl] = useState('');
+  const [sessions, setSessions] = useState<SessionWithSubmission[]>([]);
+  // Create a map for quick session lookup by token ID
+  const sessionMap = sessions.reduce<Record<string, SessionWithSubmission>>((acc, s) => {
+    if (s.interviewTokenId) acc[s.interviewTokenId] = s;
+    return acc;
+  }, {});
 
-  // Fetch real interview data
-  useEffect(() => {
-    async function load() {
-      if (!id) return;
-      try {
-        const token = await getToken();
-        if (!token) throw new Error('Not authenticated');
-        const data = await api.interviews.get(id, token);
-        setInterview(data);
-      } catch (err: unknown) {
-        console.warn('Failed to fetch interview, using fallback:', err);
-        setError((err as Error).message || 'Failed to load interview details.');
-        // Use fallback data so UI still works (your backend might not be ready yet)
-        setInterview(fallbackInterview as Interview);
-      } finally {
-        setLoading(false);
+  const loadData = async () => {
+    if (!isSignedIn) return;
+    const token = await getToken();
+    if (!token) return;
+
+    try {
+      // 1. Destructure the results from Promise.all
+      const [interviewRes, tokensRes, sessionsRes] = await Promise.all([
+        fetch(`/api/v1/interviews/${id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(`/api/v1/interviews/${id}/tokens`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(`/api/v1/interviews/${id}/sessions`, { // This is now a fetch call
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      ]);
+
+      // 2. Handle Interview Response
+      if (interviewRes.ok) {
+        const data = await interviewRes.json();
+        setInterview(data.data?.interview || null);
       }
+
+      // 3. Handle Tokens Response
+      if (tokensRes.ok) {
+        const data = await tokensRes.json();
+        setTokens(data.data?.tokens || []);
+      }
+
+      // 4. Handle Sessions Response
+      if (sessionsRes.ok) {
+        const result = await sessionsRes.json();
+        // Adjust this based on your backend structure:
+        // The router in interview.routes.ts returns { data: { sessions: [...] } }
+        setSessions(result.data?.sessions || []);
+      }
+    } catch (err) {
+      console.error('Failed to load data:', err);
+    } finally {
+      setLoading(false);
     }
-    load();
-  }, [id, getToken]);
+  };
 
-  // Use fallback data for candidates and result (replace with real endpoints later)
-  const candidates = fallbackCandidates;
-  const result = fallbackResult;
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadData();
+  }, [id, isSignedIn]);
 
-  const shareLink = typeof window !== 'undefined'
-    ? `${window.location.origin}/interview/${interview?.shareToken || 'tok_abc123'}`
-    : '';
+  const generateToken = async () => {
+    if (!candidateName || !candidateEmail) {
+      setError('Please fill in candidate name and email');
+      return;
+    }
+    setGenerating(true);
+    setError('');
+    const token = await getToken();
+    try {
+      const res = await fetch(`/api/v1/interviews/${id}/tokens`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ candidateName, candidateEmail, expiresInDays: 7 }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to generate link');
+      }
+      const data = await res.json();
+      setInviteUrl(data.data?.inviteUrl || '');
+      await loadData(); // refresh list
+      setCandidateName('');
+      setCandidateEmail('');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to generate link');
+    } finally {
+      setGenerating(false);
+    }
+  };
 
-  function copyLink() {
-    navigator.clipboard.writeText(shareLink);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
+  const copyToClipboard = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
 
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="p-6">Loading interview details…</div>
+        <div className="p-6">Loading...</div>
       </DashboardLayout>
     );
   }
 
-  if (error && !interview) {
+  if (!interview) {
     return (
       <DashboardLayout>
-        <div className="p-6 text-red-600">Error: {error}</div>
+        <div className="p-6">Interview not found.</div>
       </DashboardLayout>
     );
   }
 
-  // Use the fetched interview or fallback
-  const data = interview || fallbackInterview;
+  const shareLink = `${typeof window !== 'undefined' ? window.location.origin : ''}/interview/${interview.id}`;
 
   return (
     <DashboardLayout>
@@ -126,171 +179,194 @@ export default function InterviewDetailPage() {
         <div className="flex items-start justify-between mb-6">
           <div>
             <div className="flex items-center gap-3 mb-1">
-              <h1 className="text-2xl font-bold text-gray-900">{data.title}</h1>
-              <Badge variant={data.status === 'Active' ? 'success' : 'default'}>{data.status}</Badge>
+              <h1 className="text-2xl font-bold text-gray-900">{interview.title}</h1>
+              <Badge variant={interview.status === 'Active' ? 'success' : 'default'}>
+                {interview.status || 'Active'}
+              </Badge>
             </div>
             <p className="text-sm text-gray-500">
-              {data.role} · {data.difficulty} · {data.duration} min · Created {new Date(data.createdAt).toLocaleDateString()}
+              {interview.role} · {interview.difficulty} · {interview.duration} min · Created {new Date(interview.createdAt).toLocaleDateString()}
             </p>
           </div>
         </div>
 
         <div className="flex gap-1 border-b border-gray-200 mb-6">
-          {(['overview', 'candidates', 'results'] as Tab[]).map((t) => (
+          {(['overview', 'candidates'] as Tab[]).map((tab) => (
             <button
-              key={t}
-              onClick={() => setTab(t)}
+              key={tab}
+              onClick={() => setActiveTab(tab)}
               className={cn(
                 'px-4 py-2.5 text-sm font-medium capitalize border-b-2 -mb-px transition-colors',
-                tab === t
+                activeTab === tab
                   ? 'border-indigo-600 text-indigo-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               )}
             >
-              {t}
+              {tab}
             </button>
           ))}
         </div>
 
-        {tab === 'overview' && (
+        {activeTab === 'overview' && (
           <div className="space-y-5">
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-              <h2 className="font-semibold text-gray-900 mb-4">Interview Configuration</h2>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+            <Card>
+              <CardHeader>
+                <CardTitle>Interview Configuration</CardTitle>
+              </CardHeader>
+              <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                 <div>
                   <p className="text-gray-500">Topics</p>
-                  <p className="font-medium text-gray-900 mt-0.5">
-                    {data.topics?.join(', ') || 'None'}
-                  </p>
+                  <p className="font-medium mt-0.5">{interview.topics?.join(', ') || '—'}</p>
                 </div>
                 <div>
                   <p className="text-gray-500">Language</p>
-                  <p className="font-medium text-gray-900 mt-0.5">{data.language || 'Not set'}</p>
+                  <p className="font-medium mt-0.5">{interview.language}</p>
                 </div>
                 <div>
                   <p className="text-gray-500">Coding Questions</p>
-                  <p className="font-medium text-gray-900 mt-0.5">{data.numQuestions ?? 0}</p>
+                  <p className="font-medium mt-0.5">{interview.numQuestions}</p>
                 </div>
-              </div>
-            </div>
+              </CardContent>
+            </Card>
 
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-              <h2 className="font-semibold text-gray-900 mb-4">Share Link</h2>
-              <div className="flex gap-2">
-                <input
-                  readOnly
-                  value={shareLink}
-                  className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700 focus:outline-none"
-                />
-                <Button variant="secondary" onClick={copyLink}>
-                  {copied ? <Check size={16} className="text-green-500" /> : <Copy size={16} />}
-                  {copied ? 'Copied' : 'Copy'}
+            <Card>
+              <CardHeader>
+                <CardTitle>Share Interview Link</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex gap-2">
+                  <input
+                    readOnly
+                    value={shareLink}
+                    className="flex-1 border rounded-lg px-3 py-2 text-sm bg-gray-50"
+                  />
+                  <Button variant="secondary" onClick={() => copyToClipboard(shareLink, 'main')}>
+                    {copiedId === 'main' ? <Check size={16} className="text-green-500" /> : <Copy size={16} />}
+                    Copy
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {activeTab === 'candidates' && (
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Invite a Candidate</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Input
+                    label="Candidate name"
+                    value={candidateName}
+                    onChange={(e) => setCandidateName(e.target.value)}
+                    placeholder="John Doe"
+                  />
+                  <Input
+                    label="Candidate email"
+                    type="email"
+                    value={candidateEmail}
+                    onChange={(e) => setCandidateEmail(e.target.value)}
+                    placeholder="john@example.com"
+                  />
+                </div>
+                {error && <p className="text-sm text-red-600">{error}</p>}
+                <Button onClick={generateToken} disabled={generating}>
+                  {generating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+                  Generate Invite Link
                 </Button>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-              <h2 className="font-semibold text-gray-900 mb-4">QR Code</h2>
-              <div className="w-40 h-40 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400 text-sm">
-                QR placeholder
-              </div>
-            </div>
-          </div>
-        )}
-
-        {tab === 'candidates' && (
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100">
-                  <th className="text-left font-medium text-gray-500 px-6 py-3">Name</th>
-                  <th className="text-left font-medium text-gray-500 px-6 py-3">Email</th>
-                  <th className="text-left font-medium text-gray-500 px-6 py-3">Score</th>
-                  <th className="text-left font-medium text-gray-500 px-6 py-3">Status</th>
-                  <th className="text-left font-medium text-gray-500 px-6 py-3">Date</th>
-                  <th className="px-6 py-3" />
-                </tr>
-              </thead>
-              <tbody>
-                {candidates.map((c) => (
-                  <tr key={c.email} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 font-medium text-gray-900">{c.name}</td>
-                    <td className="px-6 py-4 text-gray-600">{c.email}</td>
-                    <td className="px-6 py-4 font-semibold text-gray-900">{c.score}%</td>
-                    <td className="px-6 py-4">
-                      <Badge variant={resultStatusVariant(c.status)}>{c.status}</Badge>
-                    </td>
-                    <td className="px-6 py-4 text-gray-500">{c.date}</td>
-                    <td className="px-6 py-4">
-                      <button
-                        onClick={() => setTab('results')}
-                        className="text-indigo-600 hover:text-indigo-700 text-sm font-medium"
+                {inviteUrl && (
+                  <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <p className="text-sm font-medium text-green-800">Invite Link Generated!</p>
+                    <div className="flex items-center gap-2 mt-2">
+                      <input
+                        readOnly
+                        value={inviteUrl}
+                        className="flex-1 border rounded-lg px-3 py-1.5 text-sm bg-white"
+                      />
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => copyToClipboard(inviteUrl, 'new-link')}
                       >
-                        View Report
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {tab === 'results' && (
-          <div className="space-y-5">
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-              <div className="flex items-center gap-4">
-                <div>
-                  <p className="text-sm text-gray-500 mb-1">Recommendation</p>
-                  <Badge variant="success" className="text-sm px-3 py-1">{result.recommendation}</Badge>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500 mb-1">Confidence</p>
-                  <p className="text-2xl font-bold text-gray-900">{result.confidence}%</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500 mb-1">Time Spent</p>
-                  <p className="text-lg font-semibold text-gray-900">{result.metrics.timeSpent} min</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500 mb-1">Questions</p>
-                  <p className="text-lg font-semibold text-gray-900">{result.metrics.questionsAnswered}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-              <h2 className="font-semibold text-gray-900 mb-4">Transcript</h2>
-              <div className="space-y-3">
-                {result.transcript.map((msg, i) => (
-                  <div key={i} className={cn('flex', msg.role === 'candidate' ? 'justify-end' : 'justify-start')}>
-                    <div
-                      className={cn(
-                        'max-w-md rounded-xl px-4 py-2.5 text-sm',
-                        msg.role === 'candidate'
-                          ? 'bg-indigo-600 text-white'
-                          : 'bg-gray-100 text-gray-800'
-                      )}
-                    >
-                      {msg.content}
+                        {copiedId === 'new-link' ? <Check size={14} /> : <Copy size={14} />}
+                      </Button>
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
+                )}
+              </CardContent>
+            </Card>
 
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-              <h2 className="font-semibold text-gray-900 mb-2">Code Review</h2>
-              <p className="text-sm text-gray-600 mb-3">{result.codeReview.feedback}</p>
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Issues found</p>
-              <ul className="space-y-1.5">
-                {result.codeReview.issues.map((issue, i) => (
-                  <li key={i} className="text-sm text-gray-700 flex items-start gap-2">
-                    <span className="text-red-500 mt-0.5">•</span> {issue}
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <Card>
+              <CardHeader>
+                <CardTitle>Invited Candidates</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {tokens.length === 0 ? (
+                  <p className="text-gray-500 text-sm">No invites sent yet.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-2">Candidate</th>
+                          <th className="text-left py-2">Email</th>
+                          <th className="text-left py-2">Invite Link</th>
+                          <th className="text-left py-2">Expires</th>
+                          <th className="text-left py-2">Used</th>
+                          <th className="text-left py-2">Submission Status</th>
+                          <th className="text-left py-2">Score</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tokens.map((t) => {
+                          const session = sessionMap[t.id];
+                          const submission = session?.submission;
+                          const status = submission?.status || (session ? 'No submission' : 'Not started');
+                          const score = submission?.score ?? '—';
+
+                          const link = `${window.location.origin}/interview/${t.token}`;
+
+                          return (
+                            <tr key={t.id} className="border-b">
+                              <td className="py-2">{t.candidateName || '—'}</td>
+                              <td className="py-2">{t.candidateEmail || '—'}</td>
+                              <td className="py-2">
+                                <div className="flex items-center gap-1">
+                                  <code className="text-xs bg-gray-100 px-1 py-0.5 rounded truncate max-w-[150px]">
+                                    {link}
+                                  </code>
+                                  <button
+                                    onClick={() => copyToClipboard(link, t.id)}
+                                    className="p-1 hover:bg-gray-100 rounded"
+                                  >
+                                    {copiedId === t.id ? <Check size={14} /> : <Copy size={14} />}
+                                  </button>
+                                </div>
+                              </td>
+                              <td className="py-2">{new Date(t.expiresAt).toLocaleDateString()}</td>
+                              <td className="py-2">{t.used ? '✅ Yes' : '❌ No'}</td>
+                              <td className="py-2">
+                                {session ? (
+                                  <Badge variant={submissionStatusVariant(status)}>
+                                    {status}
+                                  </Badge>
+                                ) : (
+                                  <span className="text-gray-400 text-xs">Not started</span>
+                                )}
+                              </td>
+                              <td className="py-2">{score}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
         )}
       </div>

@@ -65,7 +65,16 @@ export const api = {
       console.warn('Unexpected response format from /api/v1/interviews', response);
       return [];
     },
-
+    // Inside the `interviews` object:
+    getSessions: async (id: string, token?: string): Promise<SessionWithSubmission[]> => {
+      const response = await request<ApiResponse<{ sessions: SessionWithSubmission[] }>>(
+        'GET',
+        `/api/v1/interviews/${id}/sessions`,
+        undefined,
+        token
+      );
+      return response.data?.sessions || [];
+    },
     get: async (id: string, token?: string): Promise<Interview> => {
       const response = await request<ApiResponse<{ interview: Interview }>>(
         'GET',
@@ -105,14 +114,41 @@ export const api = {
       );
       return response.data?.interview as Interview;
     },
+    delete: async (id: string, token?: string): Promise<void> => {
+    await request('DELETE', `/api/v1/interviews/${id}`, undefined, token);
+},
   },
 
   sessions: {
-    async start(token: string, data: { candidateName: string; email: string }) {
-      return request<{ sessionId: string }>('POST', '/api/session/start', data, token);
-    },
-    async complete(token: string, data: { sessionId: string; answers: unknown[] }) {
-      return request<{ success: boolean }>('POST', '/api/session/complete', data, token);
+  async start(inviteToken: string, data: { candidateName: string; email: string }) {
+    const response = await request<ApiResponse<{ sessionId: string }>>(
+      'POST',
+      '/api/v1/session/start',
+      { ...data, token: inviteToken },
+      undefined
+    );
+    console.log('📦 Full response:', response); // 👈 Add this
+
+    const sessionId = response.data?.sessionId;
+    if (!sessionId) {
+      throw new Error('No session ID returned from server');
+    }
+    return response.data?.sessionId; // ✅
+
+  },
+  async complete(inviteToken: string, data: { sessionId: string; answers: unknown[] }) {
+    const response = await request<ApiResponse<{ success: boolean }>>(
+      'POST',
+      '/api/v1/session/complete',
+      { ...data, token: inviteToken },
+      undefined
+    );
+    return response.data?.success ?? false;
+  },
+},
+  submissions: {
+    async submit(data: { sessionId: string; code: string; language: string }) {
+      return request<{ submissionId: string }>('POST', '/api/v1/submissions/submit', data);
     },
   },
 
@@ -138,6 +174,8 @@ export const api = {
       );
     },
   },
+  
+
 
   results: {
     async get(id: string, token?: string) {
@@ -157,6 +195,20 @@ export interface Result {
   transcript: { role: string; content: string }[];
   codeReview: { score: number; feedback: string; issues: string[] };
   metrics: { timeSpent: number; questionsAnswered: number; codingChallenges: number };
+  createdAt: string;
+}
+export interface SessionWithSubmission {
+  id: string;
+  candidateName: string;
+  candidateEmail: string;
+  status: string;               // e.g. 'pending', 'active', 'completed'
+  interviewTokenId?: string;    // link to the token
+  submission?: {
+    id: string;
+    status: 'pending' | 'grading' | 'graded';
+    score?: number | null;
+    feedback?: string | null;
+  } | null;
   createdAt: string;
 }
 

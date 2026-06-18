@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@clerk/nextjs';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
@@ -10,12 +10,12 @@ import { Button } from '@/components/ui/button';
 import { Plus, Search, Trash2, Eye } from 'lucide-react';
 import { api, Interview } from '@/lib/api';
 
-type Status = 'All' | 'Active' | 'Completed' | 'Draft';
+type Status = 'All' | 'Draft' | 'Active' | 'Completed';
 
 function statusVariant(status: string) {
   if (status === 'Active') return 'success' as const;
   if (status === 'Completed') return 'info' as const;
-  return 'default' as const;
+  return 'default' as const; // for Draft
 }
 
 function difficultyVariant(d: string) {
@@ -31,7 +31,19 @@ export default function InterviewsPage() {
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<Status>('All');
-
+  const loadData = useCallback(async () => {
+    try {
+      const token = await getToken();
+      if (!token) throw new Error('Not authenticated');
+      const data = await api.interviews.list(token);
+      setInterviews(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError((err as Error).message || 'Failed to load interviews');
+      setInterviews([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [getToken]);
   useEffect(() => {
     async function load() {
       try {
@@ -52,7 +64,7 @@ export default function InterviewsPage() {
 
   const filtered = interviews.filter((i) => {
     const matchesSearch = i.title.toLowerCase().includes(search.toLowerCase()) ||
-                           i.role.toLowerCase().includes(search.toLowerCase());
+      i.role.toLowerCase().includes(search.toLowerCase());
     const matchesFilter = filter === 'All' || i.status === filter;
     return matchesSearch && matchesFilter;
   });
@@ -88,15 +100,14 @@ export default function InterviewsPage() {
             />
           </div>
           <div className="flex gap-2">
-            {(['All', 'Active', 'Completed', 'Draft'] as Status[]).map((s) => (
+            {(['All', 'Draft', 'Active', 'Completed'] as Status[]).map((s) => (
               <button
                 key={s}
                 onClick={() => setFilter(s)}
-                className={`px-3 py-2 text-sm rounded-lg border font-medium transition-colors ${
-                  filter === s
-                    ? 'bg-indigo-600 text-white border-indigo-600'
-                    : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
-                }`}
+                className={`px-3 py-2 text-sm rounded-lg border font-medium transition-colors ${filter === s
+                  ? 'bg-indigo-600 text-white border-indigo-600'
+                  : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                  }`}
               >
                 {s}
               </button>
@@ -150,7 +161,23 @@ export default function InterviewsPage() {
                               View
                             </Button>
                           </Link>
-                          <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600 hover:bg-red-50">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                            onClick={async () => {
+                              if (!confirm('Are you sure you want to delete this interview?')) return;
+                              try {
+                                const token = await getToken();
+                                if (!token) throw new Error('Not authenticated');
+                                await api.interviews.delete(interview.id, token);
+                                loadData(); // refresh the list
+                              } catch (err) {
+                                console.error('Delete error:', err);
+                                alert('Failed to delete interview');
+                              }
+                            }}
+                          >
                             <Trash2 size={14} />
                           </Button>
                         </div>

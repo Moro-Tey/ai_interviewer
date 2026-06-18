@@ -1,13 +1,7 @@
-import Link from 'next/link'
-import { Clock, Code, ShieldCheck, ListChecks, Cpu } from 'lucide-react'
+import Link from 'next/link';
+import { Clock, Code, ShieldCheck, ListChecks, Cpu } from 'lucide-react';
 
 export default function InterviewBriefPage() {
-  return (
-    <BriefContent />
-  )
-}
-
-function BriefContent() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center py-12 px-4">
       <div className="w-full max-w-2xl">
@@ -16,7 +10,7 @@ function BriefContent() {
             <span className="text-indigo-600">✦</span>
             InterviewAI
           </div>
-          <h1 className="text-3xl font-bold text-gray-900">Senior Frontend Engineer</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Technical Interview</h1>
           <p className="text-gray-500 mt-2">Please read the instructions carefully before you begin.</p>
         </div>
 
@@ -54,7 +48,7 @@ function BriefContent() {
             </div>
             <div className="p-3 bg-gray-50 rounded-lg text-center">
               <Code size={18} className="text-indigo-400 mx-auto mb-1" />
-              <p className="text-xs text-gray-500">JavaScript editor</p>
+              <p className="text-xs text-gray-500">Code editor</p>
             </div>
             <div className="p-3 bg-gray-50 rounded-lg text-center">
               <ShieldCheck size={18} className="text-indigo-400 mx-auto mb-1" />
@@ -87,5 +81,5 @@ function BriefContent() {
         </div>
       </div>
     </div>
-  )
+  );
 }

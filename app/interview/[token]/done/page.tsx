@@ -1,4 +1,5 @@
-import { CheckCircle2 } from 'lucide-react'
+import { CheckCircle2 } from 'lucide-react';
+import Link from 'next/link';
 
 export default function InterviewDonePage() {
   return (
@@ -34,7 +35,11 @@ export default function InterviewDonePage() {
           Your results will be reviewed and you&apos;ll hear back within{' '}
           <strong>2–3 business days</strong>. Keep an eye on your inbox.
         </div>
+
+        <Link href="/" className="mt-6 inline-block text-indigo-600 hover:underline text-sm">
+          Return Home
+        </Link>
       </div>
     </div>
-  )
+  );
 }

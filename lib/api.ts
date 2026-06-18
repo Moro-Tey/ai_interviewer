@@ -236,23 +236,31 @@ export interface SessionWithSubmission {
   createdAt: string;
 }
 
-export async function fetchMyCompany() {
-  const res = await fetch('/api/companies/me');
+// ✅ Corrected api.ts code
+export async function fetchMyCompany(token?: string) {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(`${BASE_URL}/api/companies/me`, {
+    method: 'GET',
+    headers,
+  });
   if (!res.ok) throw new Error('Failed to fetch company');
   const data = await res.json();
   return data.company;
 }
 
-export async function createCompany(name: string) {
-  const res = await fetch('/api/companies', {
+export async function createCompany(name: string, token?: string) {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(`${BASE_URL}/api/companies`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ companyName: name }),
+    headers,
+    body: JSON.stringify({ name }),
   });
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.error || 'Failed to create company');
-  }
-  const data = await res.json();
-  return data.company;
+  if (!res.ok) throw new Error('Failed to create company');
+  return res.json();
 }
+
+

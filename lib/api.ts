@@ -115,57 +115,81 @@ export const api = {
       return response.data?.interview as Interview;
     },
     delete: async (id: string, token?: string): Promise<void> => {
-    await request('DELETE', `/api/v1/interviews/${id}`, undefined, token);
-},
+      await request('DELETE', `/api/v1/interviews/${id}`, undefined, token);
+    },
   },
 
   sessions: {
-  async start(inviteToken: string, data: { candidateName: string; email: string }) {
-    const response = await request<ApiResponse<{ sessionId: string }>>(
-      'POST',
-      '/api/v1/session/start',
-      { ...data, token: inviteToken },
-      undefined
-    );
-    console.log('📦 Full response:', response); // 👈 Add this
+    async start(inviteToken: string, data: { candidateName: string; email: string }) {
+      const response = await request<ApiResponse<{ sessionId: string }>>(
+        'POST',
+        '/api/v1/session/start',
+        { ...data, token: inviteToken },
+        undefined
+      );
+      console.log('📦 Full response:', response); // 👈 Add this
 
-    const sessionId = response.data?.sessionId;
-    if (!sessionId) {
-      throw new Error('No session ID returned from server');
-    }
-    return response.data?.sessionId; // ✅
+      const sessionId = response.data?.sessionId;
+      if (!sessionId) {
+        throw new Error('No session ID returned from server');
+      }
+      return response.data?.sessionId; // ✅
 
-  },
-  async complete(inviteToken: string, data: { sessionId: string; answers: unknown[] }) {
-    const response = await request<ApiResponse<{ success: boolean }>>(
-      'POST',
-      '/api/v1/session/complete',
-      { ...data, token: inviteToken },
-      undefined
-    );
-    return response.data?.success ?? false;
-  },
-},
-  submissions: {
-    async submit(data: { sessionId: string; code: string; language: string }) {
-      return request<{ submissionId: string }>('POST', '/api/v1/submissions/submit', data);
+    },
+    async complete(inviteToken: string, data: { session_id: string; answers: unknown[] }) {
+      const response = await request<ApiResponse<{ success: boolean }>>(
+        'POST',
+        '/api/v1/session/complete',
+        { ...data, token: inviteToken },
+        undefined
+      );
+      return response.data?.success ?? false;
     },
   },
+  submissions: {
+  async submit(data: {
+    session_id: string;
+    code: string;
+    language: string;
+    problem: string;
+    executionResult: unknown;
+  }) {
+    return request<{ submissionId: string; score?: number; feedback?: string }>(
+      'POST',
+      '/ai/code/review',
+      data
+    );
+  },
+},
 
   ai: {
     async chat(sessionId: string, message: string) {
       return request<{ reply: string }>('POST', '/api/ai/interview/chat', { sessionId, message });
     },
-    async generateChallenge(config: { topics: string[]; difficulty: string; language: string }) {
-      return request<{ problem: string; starterCode: string }>('POST', '/api/ai/challenge/generate', config);
+    // In api.ts, inside the `ai` object:
+    async generateChallenge(config: {
+      role: string;
+      topics: string[];
+      difficulty: string;
+      language: string;
+    }) {
+      // The actual response from the AI service includes `starter_code` and `test_cases`
+      return request<{
+        problem: string;
+        starter_code: string;   // note underscore
+        test_cases?: unknown[];
+      }>('POST', '/api/ai/challenge/generate', config);
     },
     async executeCode(code: string, language: string) {
-      return request<{ stdout: string; stderr: string; executionTime: number }>(
-        'POST',
-        '/api/ai/code/execute',
-        { code, language }
-      );
-    },
+      const response = await request<ApiResponse<{ stdout: string; stderr: string; executionTime: number }>>(
+      'POST',
+      '/api/ai/code/execute',
+    { code, language }
+  );
+  // Unwrap the data field so the frontend receives { stdout, stderr, executionTime }
+  return response.data;
+},
+    
     async reviewCode(data: { code: string; language: string; problem: string }) {
       return request<{ score: number; feedback: string; issues: string[] }>(
         'POST',
@@ -174,7 +198,7 @@ export const api = {
       );
     },
   },
-  
+
 
 
   results: {

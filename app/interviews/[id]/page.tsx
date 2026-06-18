@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Copy, Check, Plus, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { api, SessionWithSubmission } from '@/lib/api';
+import { SessionWithSubmission } from '@/lib/api';
 
 
 
@@ -114,6 +114,7 @@ export default function InterviewDetailPage() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, isSignedIn]);
 
   const generateToken = async () => {
@@ -318,6 +319,7 @@ export default function InterviewDetailPage() {
                           <th className="text-left py-2">Used</th>
                           <th className="text-left py-2">Submission Status</th>
                           <th className="text-left py-2">Score</th>
+                          <th className="text-left py-2">Feedback</th>   {/* NEW */}
                         </tr>
                       </thead>
                       <tbody>
@@ -326,6 +328,7 @@ export default function InterviewDetailPage() {
                           const submission = session?.submission;
                           const status = submission?.status || (session ? 'No submission' : 'Not started');
                           const score = submission?.score ?? '—';
+                          const feedback = submission?.feedback || '—';
 
                           const link = `${window.location.origin}/interview/${t.token}`;
 
@@ -358,6 +361,9 @@ export default function InterviewDetailPage() {
                                 )}
                               </td>
                               <td className="py-2">{score}</td>
+                              <td className="py-2 text-sm max-w-md break-words whitespace-normal">
+                                {feedback}
+                              </td>
                             </tr>
                           );
                         })}

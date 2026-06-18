@@ -187,7 +187,7 @@ export const api = {
     { code, language }
   );
   // Unwrap the data field so the frontend receives { stdout, stderr, executionTime }
-  return response.data;
+    return response.data ?? { stdout: '', stderr: '', executionTime: 0 };
 },
     
     async reviewCode(data: { code: string; language: string; problem: string }) {

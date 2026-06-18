@@ -140,7 +140,7 @@ export default function CodingSessionPage() {
     setOutput(null);
     try {
       const result = await api.ai.executeCode(code, language);
-      setOutput(result);
+      setOutput(result ?? { stdout: '', stderr: '', executionTime: 0 });
     } catch {
       setOutput({ stdout: '', stderr: 'Execution failed. Please try again.', executionTime: 0 });
     } finally {

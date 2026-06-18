@@ -18,18 +18,32 @@ export default function CandidateGatePage() {
   const [error, setError] = useState('')
 
   async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
-    try {
-      await api.sessions.start(token, { candidateName: name, email })
-      router.push(`/interview/${token}/brief`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not verify your details. Please check your link and try again.')
-    } finally {
-      setLoading(false)
+  e.preventDefault();
+  setError('');
+  setLoading(true);
+
+  try {
+    // ✅ Destructure the response to get sessionId
+    const sessionId = await api.sessions.start(token, {
+      candidateName: name,
+      email,
+});
+
+    if (!sessionId) {
+      throw new Error('No session ID returned from server.');
     }
+
+    // ✅ Store the string value
+    sessionStorage.setItem('interviewSessionId', sessionId);
+    console.log('✅ Stored sessionId:', sessionId);
+
+    router.push(`/interview/${token}/brief`);
+  } catch (err) {
+    setError(err instanceof Error ? err.message : 'Could not verify your details.');
+  } finally {
+    setLoading(false);
   }
+}
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-4 py-12">

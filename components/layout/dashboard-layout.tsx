@@ -6,6 +6,8 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
 import { LayoutDashboard, FileText, Settings, LogOut, Menu, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { SignOutButton } from '@clerk/nextjs'
+
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -55,13 +57,15 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           <p className="text-sm font-medium text-white truncate">{user?.name || user?.email || 'User'}</p>
           <p className="text-xs text-gray-400 truncate">{user?.company || ''}</p>
         </div>
-        <button
-          onClick={handleLogout}
-          className="flex w-full items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:bg-gray-800 hover:text-white transition-colors"
-        >
-          <LogOut size={18} />
-          Sign out
-        </button>
+        <SignOutButton>
+          <button
+            onClick={handleLogout}
+            className="flex w-full items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:bg-gray-800 hover:text-white transition-colors"
+          >
+            <LogOut size={18} />
+            Sign out
+          </button>
+        </SignOutButton>
       </div>
     </div>
   )

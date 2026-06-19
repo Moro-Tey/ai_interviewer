@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
-const API_BASE = '';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void }) {
   return (
     <button
@@ -69,7 +69,7 @@ export default function SettingsPage() {
       }
 
       // Fetch user name
-      const userRes = await fetch(`/api/users/me`, {
+      const userRes = await fetch(`${API_BASE}/api/users/me`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (userRes.ok) {
@@ -78,7 +78,7 @@ export default function SettingsPage() {
       }
 
       // Fetch company
-      const companyRes = await fetch(`/api/companies/me`, {
+      const companyRes = await fetch(`${API_BASE}/api/companies/me`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (companyRes.ok) {
@@ -146,7 +146,7 @@ export default function SettingsPage() {
     }
     try {
       // 1. Create the company (POST /api/companies)
-      const res = await fetch(`/api/companies`, {
+      const res = await fetch(`${API_BASE}/api/companies`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ companyName }),
